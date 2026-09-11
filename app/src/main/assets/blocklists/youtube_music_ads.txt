@@ -1,0 +1,39 @@
+# Lista local para YouTube Music - solo dominios de anuncios y medicion.
+# NO se descarga nada de la red: esta lista viaja dentro del APK.
+#
+# Excepciones primero: dominios imprescindibles para la reproduccion.
+# Se declaran explicitamente para que ninguna regla generica los tumbe.
+@@googlevideo.com
+@@youtubei.googleapis.com
+@@music.youtube.com
+@@www.youtube.com
+@@youtube.com
+@@ytimg.com
+@@googleusercontent.com
+@@accounts.google.com
+@@play.googleapis.com
+@@android.googleapis.com
+@@gstatic.com
+
+# --- Publicidad ---
+doubleclick.net
+googleadservices.com
+googlesyndication.com
+pagead2.googlesyndication.com
+googleads.g.doubleclick.net
+ad.doubleclick.net
+static.doubleclick.net
+stats.g.doubleclick.net
+adservice.google.com
+ads.youtube.com
+2mdn.net
+s0.2mdn.net
+imasdk.googleapis.com
+
+# --- Medicion / analitica ---
+google-analytics.com
+analytics.google.com
+ssl.google-analytics.com
+app-measurement.com
+firebase-settings.crashlytics.com
+crashlytics.com

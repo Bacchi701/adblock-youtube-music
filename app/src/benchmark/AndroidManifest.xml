@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!--
+          Solo en la variante de medicion: permite a Macrobenchmark leer trazas del proceso.
+          No se incluye en release para no exponer el perfilado en la app publicada.
+        -->
+        <profileable
+            android:shell="true"
+            tools:targetApi="q" />
+    </application>
+
+</manifest>

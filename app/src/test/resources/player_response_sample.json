@@ -1,0 +1,28 @@
+{
+  "responseContext": {"visitorData": "Cgt0ZXN0LXZpc2l0b3I%3D", "serviceTrackingParams": [{"service": "GFEEDBACK", "params": [{"key": "is_viewed_live", "value": "false"}]}]},
+  "playabilityStatus": {"status": "OK", "playableInEmbed": true, "audioOnlyPlayability": {"audioOnlyPlayabilityRenderer": {"trackingParams": "CAEQ", "audioOnlyAvailability": "FEATURE_AVAILABILITY_ALLOWED"}}},
+  "streamingData": {
+    "expiresInSeconds": "21540",
+    "adaptiveFormats": [
+      {"itag": 251, "url": "https://rr3---sn-test.googlevideo.com/videoplayback?expire=1754700000&itag=251", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 141235, "contentLength": "3521456", "approxDurationMs": "212345", "audioQuality": "AUDIO_QUALITY_MEDIUM", "loudnessDb": -1.2299995},
+      {"itag": 140, "url": "https://rr3---sn-test.googlevideo.com/videoplayback?expire=1754700000&itag=140", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 129543, "contentLength": "3427891", "approxDurationMs": "212345", "audioQuality": "AUDIO_QUALITY_MEDIUM"}
+    ],
+    "adPlacements": [{"note": "clave de anuncio anidada dentro de un bloque protegido"}]
+  },
+  "playerAds": [{"playerLegacyDesktopWatchAdsRenderer": {"playerAdParams": {"showContentThumbnail": true}}}],
+  "adPlacements": [
+    {"adPlacementRenderer": {"config": {"adPlacementConfig": {"kind": "AD_PLACEMENT_KIND_START"}}, "renderer": {"linearAdSequenceRenderer": {"linearAds": [{"instreamVideoAdRenderer": {"playerOverlay": {}}}]}}}},
+    {"adPlacementRenderer": {"config": {"adPlacementConfig": {"kind": "AD_PLACEMENT_KIND_MILLISECONDS"}}}}
+  ],
+  "adSlots": [{"adSlotRenderer": {"adSlotMetadata": {"slotId": "0", "slotType": "SLOT_TYPE_PLAYER_BYTES"}}}],
+  "adBreakHeartbeatParams": "Q2dJSUJCQUJHQUU9",
+  "playbackTracking": {
+    "videostatsPlaybackUrl": {"baseUrl": "https://s.youtube.com/api/stats/playback?cl=1"},
+    "atrUrl": {"baseUrl": "https://s.youtube.com/api/stats/atr?ns=yt", "elapsedMediaTimeSeconds": 0},
+    "adParams": "vpv=3"
+  },
+  "videoDetails": {"videoId": "dQw4w9WgXcQ", "title": "Cancion de prueba", "lengthSeconds": "212", "author": "Artista", "isLiveContent": false, "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", "width": 1280, "height": 720}]}},
+  "microformat": {"microformatDataRenderer": {"urlCanonical": "https://music.youtube.com/watch?v=dQw4w9WgXcQ"}},
+  "trackingParams": "CAAQu2kiEwjT",
+  "attestation": {"playerAttestationRenderer": {"challenge": "a=5&c=abc"}}
+}

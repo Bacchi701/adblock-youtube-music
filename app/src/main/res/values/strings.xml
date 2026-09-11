@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bloqueador YT Music</string>
+    <string name="notification_channel_name">Estado del filtro</string>
+    <string name="notification_title">Filtro activo</string>
+    <string name="notification_text">Filtrando DNS localmente. Sin telemetria.</string>
+    <string name="player_title">Reproductor filtrado</string>
+    <string name="playback_channel_name">Reproduccion</string>
+    <string name="playback_title">Reproduciendo</string>
+    <string name="playback_text">La musica sigue sonando en segundo plano.</string>
+    <string name="playback_play">Reproducir</string>
+    <string name="playback_pause">Pausar</string>
+    <string name="playback_next">Siguiente</string>
+    <string name="playback_previous">Anterior</string>
+</resources>
