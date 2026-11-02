@@ -54,6 +54,13 @@ class PlayerRequestMatcherTest {
     }
 
     @Test
+    fun `la verificacion anti-bots no es publicidad`() {
+        // Cortarla provoca fallos de reproduccion y avisos de "confirma que no eres un bot".
+        assertFalse(PlayerRequestMatcher.isAdRequest("https://music.youtube.com/youtubei/v1/att/get?prettyPrint=false"))
+        assertFalse(PlayerRequestMatcher.isAdRequest("https://jnn-pa.googleapis.com/\$rpc/google.internal.waa.v1.Waa/Create"))
+    }
+
+    @Test
     fun `extrae host y ruta`() {
         assertEquals("music.youtube.com", PlayerRequestMatcher.hostOf("https://MUSIC.youtube.com:443/a/b?x=1"))
         assertEquals("/a/b", PlayerRequestMatcher.pathOf("https://music.youtube.com:443/a/b?x=1"))

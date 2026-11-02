@@ -2,97 +2,135 @@ package com.adblocker.ytmusic.data.web
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
+import android.content.pm.ApplicationInfo
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
-import com.adblocker.ytmusic.domain.player.PlaybackMetadata
+import androidx.webkit.ServiceWorkerClientCompat
+import androidx.webkit.ServiceWorkerControllerCompat
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.adblocker.ytmusic.domain.usecase.EvaluateDomainUseCase
 import com.adblocker.ytmusic.domain.usecase.FilterPlayerResponseUseCase
-import java.io.ByteArrayInputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Construye el WebView del reproductor con las tres capas de filtrado:
- *  1. `shouldInterceptRequest` corta peticiones puramente publicitarias y dominios de la lista.
- *  2. El hook JS sanea el `playerResponse` (unica via posible: el cuerpo va en un POST).
- *  3. La navegacion queda confinada a los hosts de YouTube.
+ * Construye el WebView del reproductor con sus capas de filtrado y aislamiento:
+ *  1. [RequestInterceptor] corta anuncios, dominios de la lista y medicion (tambien en el
+ *     service worker de la pagina, que no pasa por el `WebViewClient`).
+ *  2. El hook JS ([HookScript]) poda el `playerResponse` y se inyecta en document-start solo en
+ *     `https://music.youtube.com`.
+ *  3. El puente ([PlayerBridge]) solo existe para ese origen y es asincrono.
+ *  4. La navegacion queda confinada por `NavigationPolicy` y [PlayerChromeClient].
  */
 object PlayerWebViewFactory {
 
     const val START_URL = "https://music.youtube.com/"
-    private const val HOOK_ASSET = "js/player_hook.js"
 
-    private val ALLOWED_HOSTS = setOf(
-        "youtube.com",
-        "youtube-nocookie.com",
-        "google.com",
-        "googleapis.com",
-        "googlevideo.com",
-        "gstatic.com",
-        "ggpht.com",
-        "ytimg.com",
-    )
+    /** Fondo de YouTube Music: evita el destello blanco mientras carga la pagina. */
+    private const val BACKGROUND = 0xFF030303.toInt()
 
-    @SuppressLint("SetJavaScriptEnabled")
+    private val serviceWorkerConfigured = AtomicBoolean(false)
+
+    /**
+     * Sin estas funciones el hook no se podria limitar al origen de YouTube Music ni inyectar
+     * antes que sus scripts. No hay respaldo inseguro: se pide actualizar el WebView del sistema.
+     */
+    fun isSupported(): Boolean =
+        WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+
+    @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
     fun create(
         context: Context,
         filterPlayer: FilterPlayerResponseUseCase,
         evaluateDomain: EvaluateDomainUseCase,
-        onPlaybackStateChanged: (Boolean) -> Unit = {},
-        onMetadataChanged: (PlaybackMetadata) -> Unit = {},
+        events: PlayerPageEvents,
     ): WebView {
-        val hookSource = context.assets.open(HOOK_ASSET).bufferedReader().use { it.readText() }
+        val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val interceptor = RequestInterceptor(filterPlayer, evaluateDomain)
+        configureServiceWorkers(interceptor)
+        val script = HookScript.load(
+            context.assets,
+            HookConfig(
+                adKeys = filterPlayer.adKeys,
+                protectedKeys = filterPlayer.protectedKeys,
+                bridgeName = PlayerBridge.NAME,
+                debug = debuggable,
+            ),
+        )
+        val origins = setOf(BridgeMessage.ORIGIN)
 
         return BackgroundPlaybackWebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
-            // Zero telemetry: Safe Browsing enviaria las URLs visitadas a un servidor externo.
-            settings.safeBrowsingEnabled = false
-
+            // Sin layoutParams, AndroidView le asigna WRAP_CONTENT y Chromium fija a 0 el alto que ven
+            // las media queries: YouTube Music se cree en horizontal y abre el reproductor en
+            // pantalla completa negra. MATCH_PARENT le da el alto real del contenedor.
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            setBackgroundColor(BACKGROUND)
+            applySettings(settings)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
 
-            addJavascriptInterface(
-                PlayerHookBridge(filterPlayer, onPlaybackStateChanged, onMetadataChanged),
-                PlayerHookBridge.NAME,
-            )
-            webViewClient = FilteringWebViewClient(hookSource, filterPlayer, evaluateDomain)
+            WebViewCompat.addWebMessageListener(this, PlayerBridge.NAME, origins, PlayerBridge(events::onBridgeMessage))
+            WebViewCompat.addDocumentStartJavaScript(this, script, origins)
+            webViewClient = PlayerWebViewClient(interceptor, events)
+            webChromeClient = PlayerChromeClient(events, logConsole = debuggable)
         }
     }
 
-    private class FilteringWebViewClient(
-        private val hookSource: String,
-        private val filterPlayer: FilterPlayerResponseUseCase,
-        private val evaluateDomain: EvaluateDomainUseCase,
-    ) : WebViewClient() {
-
-        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-            super.onPageStarted(view, url, favicon)
-            // Se reinyecta en cada documento: el hook se auto-desactiva si ya estaba puesto.
-            view.evaluateJavascript(hookSource, null)
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun applySettings(settings: WebSettings) = with(settings) {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        mediaPlaybackRequiresUserGesture = false
+        // Zero telemetry: Safe Browsing enviaria las URLs visitadas a un servidor externo.
+        safeBrowsingEnabled = false
+        allowFileAccess = false
+        allowContentAccess = false
+        setGeolocationEnabled(false)
+        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        // Las ventanas nuevas las atiende PlayerChromeClient (se abren fuera); sin gesto, ninguna.
+        javaScriptCanOpenWindowsAutomatically = false
+        setSupportMultipleWindows(true)
+        setSupportZoom(false)
+        // Medicion de conversiones publicitarias de Privacy Sandbox: fuera.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ATTRIBUTION_REGISTRATION_BEHAVIOR)) {
+            WebSettingsCompat.setAttributionRegistrationBehavior(
+                this,
+                WebSettingsCompat.ATTRIBUTION_BEHAVIOR_DISABLED,
+            )
         }
-
-        override fun shouldInterceptRequest(
-            view: WebView,
-            request: WebResourceRequest,
-        ): WebResourceResponse? {
-            val url = request.url.toString()
-            val host = request.url.host
-            val blockedDomain = host != null && evaluateDomain(host).isBlocked
-            return if (blockedDomain || filterPlayer.shouldBlockRequest(url)) EMPTY_RESPONSE else null
+        // La web ya es oscura: oscurecerla por algoritmo solo estropearia colores.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(this, false)
         }
+    }
 
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val host = request.url.host?.lowercase() ?: return true
-            // El puente JS solo debe existir en paginas de YouTube: fuera de ahi no se navega.
-            return ALLOWED_HOSTS.none { host == it || host.endsWith(".$it") }
+    /** El cliente de service workers es global al proceso: se configura una sola vez. */
+    private fun configureServiceWorkers(interceptor: RequestInterceptor) {
+        if (!serviceWorkerConfigured.compareAndSet(false, true)) return
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)) return
+        val controller = ServiceWorkerControllerCompat.getInstance()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST)) {
+            controller.setServiceWorkerClient(
+                object : ServiceWorkerClientCompat() {
+                    override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? =
+                        interceptor.intercept(request.url.toString())
+                },
+            )
         }
-
-        private companion object {
-            val EMPTY_RESPONSE
-                get() = WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+        val workerSettings = controller.serviceWorkerWebSettings
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_FILE_ACCESS)) {
+            workerSettings.allowFileAccess = false
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_CONTENT_ACCESS)) {
+            workerSettings.allowContentAccess = false
         }
     }
 }

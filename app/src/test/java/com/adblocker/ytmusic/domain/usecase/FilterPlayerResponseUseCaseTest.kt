@@ -1,13 +1,11 @@
 package com.adblocker.ytmusic.domain.usecase
 
-import com.adblocker.ytmusic.core.json.JsonValue
-import com.adblocker.ytmusic.core.json.MiniJson
 import com.adblocker.ytmusic.domain.model.PlayerFilterStats
+import com.adblocker.ytmusic.domain.player.PlayerResponseFilter
+import com.adblocker.ytmusic.domain.player.TelemetryMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,33 +15,22 @@ class FilterPlayerResponseUseCaseTest {
 
     private val playerUrl = "https://music.youtube.com/youtubei/v1/player?prettyPrint=false"
 
-    private val body = """
-        {"playabilityStatus":{"status":"OK"},"adPlacements":[{"a":1}],
-         "streamingData":{"adaptiveFormats":[{"itag":251}]},"adSlots":[1]}
-    """.trimIndent()
-
     @Test
-    fun `filtra el playerResponse y contabiliza`() {
-        val result = useCase(playerUrl, body)
-        val filtered = MiniJson.parse(result.body) as JsonValue.Obj
+    fun `contabiliza lo que poda la pagina`() {
+        useCase.onPlayerResponsePruned(3)
+        useCase.onPlayerResponsePruned(0)
 
-        assertTrue(result.changed)
-        assertNull(filtered["adPlacements"])
-        assertNull(filtered["adSlots"])
-        assertNotNull(filtered["streamingData"])
         assertEquals(
-            PlayerFilterStats(responsesInspected = 1, adSectionsRemoved = 2),
+            PlayerFilterStats(responsesInspected = 2, adSectionsRemoved = 3),
             useCase.stats.value,
         )
     }
 
     @Test
-    fun `una URL ajena al reproductor no se toca`() {
-        val result = useCase("https://music.youtube.com/youtubei/v1/browse", body)
+    fun `un recuento negativo de la pagina no resta`() {
+        useCase.onPlayerResponsePruned(-5)
 
-        assertFalse(result.changed)
-        assertSame(body, result.body)
-        assertEquals(PlayerFilterStats(), useCase.stats.value)
+        assertEquals(PlayerFilterStats(responsesInspected = 1, adSectionsRemoved = 0), useCase.stats.value)
     }
 
     @Test
@@ -55,11 +42,24 @@ class FilterPlayerResponseUseCaseTest {
     }
 
     @Test
-    fun `las estadisticas acumulan entre llamadas`() {
-        useCase(playerUrl, body)
-        useCase(playerUrl, body)
+    fun `la verificacion anti-bots de YouTube sale a la red`() {
+        assertFalse(useCase.shouldBlockRequest("https://music.youtube.com/youtubei/v1/att/get?prettyPrint=false"))
+        assertNull(useCase.telemetryResponse("https://music.youtube.com/youtubei/v1/att/get"))
+    }
 
-        assertEquals(2, useCase.stats.value.responsesInspected)
-        assertEquals(4, useCase.stats.value.adSectionsRemoved)
+    @Test
+    fun `la medicion se contesta en local y cuenta como bloqueada`() {
+        assertEquals(
+            TelemetryMatcher.Response.EMPTY_JSON,
+            useCase.telemetryResponse("https://music.youtube.com/youtubei/v1/log_event?alt=json"),
+        )
+        assertNull(useCase.telemetryResponse("https://s.youtube.com/api/stats/watchtime"))
+        assertEquals(1, useCase.stats.value.requestsBlocked)
+    }
+
+    @Test
+    fun `las claves de la poda son las de la referencia Kotlin`() {
+        assertEquals(PlayerResponseFilter.DEFAULT_AD_KEYS, useCase.adKeys)
+        assertEquals(PlayerResponseFilter.DEFAULT_PROTECTED_KEYS, useCase.protectedKeys)
     }
 }

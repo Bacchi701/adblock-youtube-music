@@ -99,7 +99,10 @@ class AdBlockVpnService : VpnService() {
         .setBlocking(true)
         .establish()
 
-    /** Usa el resolutor del sistema; nunca un DNS de terceros elegido por la app. */
+    /**
+     * Usa el resolutor del sistema; nunca un DNS de terceros elegido por la app. Sin DNS IPv4
+     * del sistema el filtro no arranca (antes caia a 9.9.9.9, un servidor externo).
+     */
     private fun resolveUpstreamDns(): InetAddress {
         val manager = getSystemService(ConnectivityManager::class.java)
         val network = manager?.activeNetwork
@@ -107,7 +110,7 @@ class AdBlockVpnService : VpnService() {
             ?.let { manager.getLinkProperties(it) }
             ?.dnsServers
             ?.firstOrNull { it.address.size == 4 }
-        return systemDns ?: InetAddress.getByName(FALLBACK_DNS)
+        return systemDns ?: error("La red activa no tiene DNS IPv4 del sistema")
     }
 
     private fun stopFiltering() {
@@ -138,7 +141,6 @@ class AdBlockVpnService : VpnService() {
         private const val TUN_PREFIX = 32
         private const val VIRTUAL_DNS = "10.215.173.2"
         private const val HOST_PREFIX = 32
-        private const val FALLBACK_DNS = "9.9.9.9"
 
         const val ACTION_START = "com.adblocker.ytmusic.action.START"
         const val ACTION_STOP = "com.adblocker.ytmusic.action.STOP"

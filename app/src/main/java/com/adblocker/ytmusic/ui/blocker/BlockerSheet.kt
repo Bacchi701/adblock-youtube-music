@@ -1,27 +1,27 @@
-package com.adblocker.ytmusic.ui
+package com.adblocker.ytmusic.ui.blocker
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,81 +33,114 @@ import com.adblocker.ytmusic.domain.model.BlocklistSource
 import com.adblocker.ytmusic.domain.model.FilterStats
 import com.adblocker.ytmusic.domain.model.PlayerFilterStats
 import com.adblocker.ytmusic.domain.model.PrivateDnsStatus
+import com.adblocker.ytmusic.ui.FilterUiState
 import com.adblocker.ytmusic.ui.theme.AdBlockerTheme
 
+/**
+ * Hoja del boton "Bloqueador": lo que hace el filtro del reproductor (siempre activo) y el
+ * filtro DNS para todo el telefono, que es opcional y empieza apagado.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FilterScreen(
+fun BlockerSheet(
     state: FilterUiState,
-    onToggle: (Boolean) -> Unit,
-    onOpenPlayer: () -> Unit,
+    onDismiss: () -> Unit,
+    onToggleDns: (Boolean) -> Unit,
     onOpenPrivateDnsSettings: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Scaffold(modifier = modifier.fillMaxSize()) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item { StatusCard(state) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        BlockerContent(state, onToggleDns, onOpenPrivateDnsSettings)
+    }
+}
 
-            if (state.dnsFilterBypassed) {
-                item { PrivateDnsWarningCard(state, onOpenPrivateDnsSettings) }
-            }
+@Composable
+private fun BlockerContent(
+    state: FilterUiState,
+    onToggleDns: (Boolean) -> Unit,
+    onOpenPrivateDnsSettings: () -> Unit,
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item { PlayerCard(state) }
 
-            item {
-                Button(
-                    onClick = { onToggle(!state.isRunning) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = if (state.isRunning) {
-                        ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    } else {
-                        ButtonDefaults.buttonColors()
-                    },
-                ) {
-                    Text(if (state.isRunning) "Detener filtrado DNS" else "Iniciar filtrado DNS")
-                }
-            }
+        item { DnsCard(state, onToggleDns) }
 
-            item { PlayerCard(state, onOpenPlayer) }
+        if (state.dnsFilterBypassed) {
+            item { PrivateDnsWarningCard(state, onOpenPrivateDnsSettings) }
+        }
 
+        if (state.isRunning) {
             item { DnsStatsCard(state) }
+        }
 
-            item {
+        item {
+            Text(
+                text = "Listas locales",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+
+        if (state.isLoadingRules) {
+            item { CircularProgressIndicator(Modifier.size(28.dp)) }
+        }
+
+        items(state.sources, key = BlocklistSource::id) { source ->
+            SourceRow(source)
+        }
+
+        item {
+            Text(
+                text = "Procesamiento 100 % local: ninguna consulta ni estadística sale del " +
+                    "dispositivo. Las listas viajan dentro del APK.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerCard(state: FilterUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusDot(Color(0xFF4CAF50))
                 Text(
-                    text = "Listas locales",
+                    text = "Anuncios de YouTube Music bloqueados",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-
-            if (state.isLoadingRules) {
-                item { CircularProgressIndicator(Modifier.size(28.dp)) }
-            }
-
-            items(state.sources, key = BlocklistSource::id) { source ->
-                SourceRow(source)
-            }
-
-            item {
-                Text(
-                    text = "Procesamiento 100% local: ninguna consulta ni estadistica sale del " +
-                        "dispositivo. Las listas viajan dentro del APK.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Text(
+                text = "Siempre activo: los anuncios se quitan de la respuesta del reproductor " +
+                    "antes de que suene la canción.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                StatItem("Anuncios quitados", state.playerStats.adSectionsRemoved.toString())
+                StatItem("Peticiones cortadas", state.playerStats.requestsBlocked.toString())
+                StatItem("Canciones", state.playerStats.responsesInspected.toString())
             }
         }
     }
 }
 
 @Composable
-private fun StatusCard(state: FilterUiState) {
+private fun DnsCard(state: FilterUiState, onToggleDns: (Boolean) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -118,31 +151,32 @@ private fun StatusCard(state: FilterUiState) {
             },
         ),
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StatusDot(state)
+                StatusDot(dnsDotColor(state))
                 Text(
-                    text = when {
-                        !state.isRunning -> "Filtro DNS detenido"
-                        state.dnsFilterBypassed -> "Filtro DNS sin efecto"
-                        else -> "Filtro DNS activo"
-                    },
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = "Bloqueo en todo el teléfono",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
                 )
+                Switch(checked = state.isRunning, onCheckedChange = onToggleDns)
             }
             Text(
                 text = when {
                     !state.isRunning ->
-                        "El reproductor integrado sigue filtrando anuncios aunque el VPN este parado."
+                        "Opcional. Bloquea rastreadores también en otras apps con una VPN local " +
+                            "(el tráfico no sale del teléfono). No hace falta para YouTube Music."
                     state.dnsFilterBypassed ->
-                        "El tunel esta levantado, pero el DNS privado estricto se lleva las " +
+                        "El túnel está levantado, pero el DNS privado estricto se lleva las " +
                             "consultas por fuera."
-                    else -> "${state.totalRules} reglas aplicandose a todo el dispositivo."
+                    else -> "${state.totalRules} reglas aplicándose a todo el dispositivo."
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
@@ -166,14 +200,14 @@ private fun PrivateDnsWarningCard(state: FilterUiState, onOpenSettings: () -> Un
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "El sistema envia las consultas cifradas por TLS a $hostname, fuera del " +
-                    "tunel. El filtro DNS no puede verlas ni bloquearlas, y forzar el corte " +
-                    "dejaria el dispositivo sin resolucion: el modo estricto no admite reserva.",
+                text = "El sistema envía las consultas cifradas por TLS a $hostname, fuera del " +
+                    "túnel. El filtro DNS no puede verlas ni bloquearlas, y forzar el corte " +
+                    "dejaría el dispositivo sin resolución: el modo estricto no admite reserva.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "Cambia el DNS privado a \"Automatico\" o \"Desactivado\" para que el " +
-                    "filtro vuelva a aplicarse. El reproductor integrado no se ve afectado.",
+                text = "Cambia el DNS privado a \"Automático\" o \"Desactivado\" para que el " +
+                    "filtro vuelva a aplicarse. YouTube Music no se ve afectado.",
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
@@ -184,52 +218,19 @@ private fun PrivateDnsWarningCard(state: FilterUiState, onOpenSettings: () -> Un
 }
 
 @Composable
-private fun StatusDot(state: FilterUiState) {
-    val color = when {
-        state.isDnsFilterEffective -> Color(0xFF4CAF50)
-        state.isRunning -> Color(0xFFFFA000) // activo pero sin efecto
-        else -> MaterialTheme.colorScheme.outline
-    }
+private fun dnsDotColor(state: FilterUiState): Color = when {
+    state.isDnsFilterEffective -> Color(0xFF4CAF50)
+    state.isRunning -> Color(0xFFFFA000) // activo pero sin efecto
+    else -> MaterialTheme.colorScheme.outline
+}
+
+@Composable
+private fun StatusDot(color: Color) {
     Column(
         modifier = Modifier
             .size(12.dp)
             .background(color, CircleShape),
     ) {}
-}
-
-@Composable
-private fun PlayerCard(state: FilterUiState, onOpenPlayer: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = "Reproductor de YouTube Music",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "Unico lugar donde se pueden quitar los anuncios insertados en el propio " +
-                    "stream: la respuesta de youtubei/v1/player se sanea antes de reproducir.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            if (state.hasPlayerActivity) {
-                HorizontalDivider()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    StatItem("Bloques de anuncios", state.playerStats.adSectionsRemoved.toString())
-                    StatItem("Peticiones cortadas", state.playerStats.requestsBlocked.toString())
-                    StatItem("Respuestas revisadas", state.playerStats.responsesInspected.toString())
-                }
-            }
-
-            OutlinedButton(onClick = onOpenPlayer, modifier = Modifier.fillMaxWidth()) {
-                Text("Abrir reproductor filtrado")
-            }
-        }
-    }
 }
 
 @Composable
@@ -288,9 +289,9 @@ private fun StatItem(label: String, value: String) {
 
 @Preview
 @Composable
-private fun FilterScreenPreview() {
-    AdBlockerTheme {
-        FilterScreen(
+private fun BlockerContentPreview() {
+    AdBlockerTheme(darkTheme = true) {
+        BlockerContent(
             state = FilterUiState(
                 isRunning = true,
                 isLoadingRules = false,
@@ -307,8 +308,7 @@ private fun FilterScreenPreview() {
                 totalRules = 45,
                 privateDns = PrivateDnsStatus.Strict("dns.example.com"),
             ),
-            onToggle = {},
-            onOpenPlayer = {},
+            onToggleDns = {},
             onOpenPrivateDnsSettings = {},
         )
     }

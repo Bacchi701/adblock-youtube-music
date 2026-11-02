@@ -1,7 +1,15 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+/** `local.properties` lo ignora git: ahi viven la ruta y las contraseñas de la clave release. */
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(::load)
 }
 
 android {
@@ -12,8 +20,8 @@ android {
         applicationId = "com.adblocker.ytmusic"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         // Extiende AndroidJUnitRunner: las pruebas instrumentadas normales siguen funcionando.
         testInstrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
         // El emulador no da cifras estables; se permite medir en el a cambio de leerlas
@@ -22,10 +30,31 @@ android {
             "EMULATOR,LOW-BATTERY,UNLOCKED,NOT-PROFILEABLE"
     }
 
+    signingConfigs {
+        // Clave propia fuera del repositorio. Sin ella (otra maquina), la release sale sin firmar.
+        localProperties.getProperty("release.storeFile")?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = localProperties.getProperty("release.storePassword")
+                keyAlias = localProperties.getProperty("release.keyAlias")
+                keyPassword = localProperties.getProperty("release.keyPassword")
+            }
+        }
+    }
+
     buildTypes {
+        /**
+         * Sufijo propio: la variante de depuracion se instala junto a la release sin pisar sus datos
+         * (la sesion de YouTube vive en el almacenamiento del WebView de cada paquete).
+         */
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -81,6 +110,8 @@ dependencies {
     // La version que arrastra Compose no reconoce API 36 y Macrobenchmark no puede
     // instalar el perfil de arranque.
     implementation(libs.androidx.profileinstaller)
+    // Jetpack de Google, sin telemetria: inyeccion en document-start y puente limitado por origen.
+    implementation(libs.androidx.webkit)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

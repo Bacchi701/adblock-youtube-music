@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Une el WebView (que es quien reproduce) con la `MediaSession` (que es quien recibe los
@@ -28,6 +29,11 @@ class PlaybackCoordinator {
 
     fun updateMetadata(metadata: PlaybackMetadata) {
         _metadata.value = metadata
+    }
+
+    /** La pagina informa por separado de la pista y del estado: cada aviso cambia solo lo suyo. */
+    fun updateMetadata(transform: (PlaybackMetadata) -> PlaybackMetadata) {
+        _metadata.update(transform)
     }
 
     /** Devuelve `false` si la orden se descarto por saturacion del buffer. */

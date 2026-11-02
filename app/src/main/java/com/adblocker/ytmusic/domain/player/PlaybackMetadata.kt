@@ -7,6 +7,11 @@ data class PlaybackMetadata(
     val durationMs: Long = 0,
     val positionMs: Long = 0,
     val isPlaying: Boolean = false,
+    val album: String = "",
+    /** Caratula elegida por la pagina; se valida con [ArtworkUrlPolicy] antes de descargarla. */
+    val artworkUrl: String? = null,
+    /** Reproduccion pedida pero esperando datos (la pagina emitio `waiting`). */
+    val isBuffering: Boolean = false,
 ) {
     val hasTrack: Boolean get() = title.isNotEmpty()
 
@@ -21,15 +26,19 @@ data class PlaybackMetadata(
             durationSeconds: Double,
             positionSeconds: Double,
             isPlaying: Boolean,
+            album: String? = null,
+            artworkUrl: String? = null,
         ) = PlaybackMetadata(
             title = title.orEmpty().trim(),
             artist = artist.orEmpty().trim(),
-            durationMs = durationSeconds.toMillis(),
-            positionMs = positionSeconds.toMillis(),
+            durationMs = secondsToMillis(durationSeconds),
+            positionMs = secondsToMillis(positionSeconds),
             isPlaying = isPlaying,
+            album = album.orEmpty().trim(),
+            artworkUrl = artworkUrl?.trim()?.ifEmpty { null },
         )
 
-        private fun Double.toMillis(): Long =
-            if (isNaN() || isInfinite() || this <= 0.0) 0L else (this * 1_000).toLong()
+        fun secondsToMillis(seconds: Double): Long =
+            if (seconds.isNaN() || seconds.isInfinite() || seconds <= 0.0) 0L else (seconds * 1_000).toLong()
     }
 }
