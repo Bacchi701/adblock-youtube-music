@@ -3,13 +3,21 @@
     <string name="app_name">Bloqueador YT Music</string>
     <string name="notification_channel_name">Estado del filtro</string>
     <string name="notification_title">Filtro activo</string>
-    <string name="notification_text">Filtrando DNS localmente. Sin telemetria.</string>
-    <string name="player_title">Reproductor filtrado</string>
-    <string name="playback_channel_name">Reproduccion</string>
+    <string name="notification_text">Filtrando DNS localmente. Sin telemetría.</string>
+    <string name="playback_channel_name">Reproducción</string>
     <string name="playback_title">Reproduciendo</string>
-    <string name="playback_text">La musica sigue sonando en segundo plano.</string>
+    <string name="playback_text">La música sigue sonando en segundo plano.</string>
     <string name="playback_play">Reproducir</string>
     <string name="playback_pause">Pausar</string>
     <string name="playback_next">Siguiente</string>
     <string name="playback_previous">Anterior</string>
+
+    <string name="tab_home">Principal</string>
+    <string name="tab_explore">Explorar</string>
+    <string name="tab_search">Buscar</string>
+    <string name="tab_library">Biblioteca</string>
+    <string name="tab_blocker">Bloqueador</string>
+
+    <string name="webview_outdated_title">Actualiza Android System WebView</string>
+    <string name="webview_outdated_text">Esta versión del WebView del sistema no permite aislar el bloqueador en YouTube Music. Actualízala desde Google Play y vuelve a abrir la app.</string>
 </resources>

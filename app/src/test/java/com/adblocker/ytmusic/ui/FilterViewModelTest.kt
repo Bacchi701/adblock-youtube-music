@@ -135,10 +135,8 @@ class FilterViewModelTest {
         advanceUntilIdle()
         assertFalse(viewModel.uiState.value.hasPlayerActivity)
 
-        playerFilter(
-            "https://music.youtube.com/youtubei/v1/player",
-            """{"adSlots":[1],"streamingData":{"itag":251}}""",
-        )
+        // La pagina poda el playerResponse y avisa de cuantos bloques quito.
+        playerFilter.onPlayerResponsePruned(1)
         advanceUntilIdle()
 
         val state = viewModel.uiState.value

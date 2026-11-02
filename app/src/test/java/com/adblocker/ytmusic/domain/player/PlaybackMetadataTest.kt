@@ -57,6 +57,17 @@ class PlaybackMetadataTest {
     }
 
     @Test
+    fun `album y caratula son opcionales`() {
+        val bare = PlaybackMetadata.fromSeconds("x", "y", 1.0, 0.0, false)
+        assertEquals("", bare.album)
+        assertEquals(null, bare.artworkUrl)
+
+        val full = PlaybackMetadata.fromSeconds("x", "y", 1.0, 0.0, false, album = " Disco ", artworkUrl = "  ")
+        assertEquals("Disco", full.album)
+        assertEquals(null, full.artworkUrl)
+    }
+
+    @Test
     fun `recorta los espacios que a veces trae la pagina`() {
         val metadata = PlaybackMetadata.fromSeconds("  Cancion  ", "  Artista ", 1.0, 0.0, true)
 

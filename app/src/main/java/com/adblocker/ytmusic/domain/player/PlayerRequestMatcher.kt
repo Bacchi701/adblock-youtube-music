@@ -20,13 +20,16 @@ object PlayerRequestMatcher {
         "2mdn.net",
     )
 
+    /**
+     * No incluye `/youtubei/v1/att/get`: es la verificacion anti-bots de YouTube, no publicidad.
+     * Cortarla provoca fallos de reproduccion y avisos de "confirma que no eres un bot".
+     */
     private val AD_PATH_MARKERS = listOf(
         "/pagead/",
         "/api/stats/ads",
         "/ptracking",
         "/get_midroll_info",
         "/youtubei/v1/player/ad_break",
-        "/youtubei/v1/att/get",
     )
 
     private const val PLAYER_PATH = "/youtubei/v1/player"

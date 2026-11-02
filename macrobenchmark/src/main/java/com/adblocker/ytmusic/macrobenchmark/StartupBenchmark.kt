@@ -11,8 +11,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Arranque de la pantalla principal. Mide el coste real de cargar las listas de bloqueo
- * desde assets y montar la UI de Compose.
+ * Arranque hasta ver la barra inferior: crear el WebView, cargar las listas de bloqueo y montar
+ * la UI de Compose. La pagina de YouTube Music depende de la red y no entra en la medida.
  */
 @RunWith(AndroidJUnit4::class)
 class StartupBenchmark {
@@ -34,8 +34,8 @@ class StartupBenchmark {
         setupBlock = { pressHome() },
     ) {
         startActivityAndWait()
-        // El arranque no termina hasta que las listas locales estan en pantalla.
-        device.wait(Until.hasObject(By.textContains("reglas")), UI_TIMEOUT_MS)
+        // El arranque termina cuando la barra nativa esta en pantalla.
+        device.wait(Until.hasObject(By.text("Principal")), UI_TIMEOUT_MS)
     }
 
     private companion object {

@@ -6,6 +6,10 @@ import com.adblocker.ytmusic.core.json.MiniJson
 /**
  * Elimina las secciones de publicidad del cuerpo de `youtubei/v1/player`.
  *
+ * Es la implementacion de referencia: en ejecucion la poda la hace `assets/js/json_prune.js`
+ * dentro de la pagina (V8, sin copiar cientos de KB por el puente) con estas mismas claves, y
+ * `JsonPruneScriptTest` comprueba que ambas producen el mismo JSON.
+ *
  * Invariantes que garantizan que no se rompe la reproduccion:
  *  1. Las claves de [protectedKeys] (`streamingData`, `videoDetails`, ...) no se tocan
  *     ni se recorren: salen tal cual llegaron.

@@ -1,262 +1,365 @@
-// Hook inyectado en music.youtube.com. Enruta las respuestas de youtubei/v1/player por el
-// filtro Kotlin (AdBlockBridge) antes de que las vea el reproductor.
-// Regla de oro: ante cualquier error se devuelve la respuesta original sin tocar.
-(function () {
-  'use strict';
+// Hook del reproductor, inyectado en document-start solo en https://music.youtube.com.
+// Se ejecuta dentro del envoltorio que arma HookScript.kt: `config`, `api` y `createPruner` vienen
+// de ahi. Regla de oro: ante cualquier error la pagina recibe lo original y sigue sonando.
 
-  if (window.__adBlockPlayerHook) return;
-  var bridge = window.AdBlockBridge;
-  if (!bridge || typeof bridge.filterPlayerResponse !== 'function') return;
-  window.__adBlockPlayerHook = true;
+var bridge = window[config.bridge] || null;
 
-  function isPlayerUrl(url) {
-    try {
-      return typeof url === 'string' && url.length > 0 && bridge.isPlayerRequest(url);
-    } catch (error) {
-      return false;
-    }
+function post(message) {
+  if (!bridge) return;
+  try {
+    bridge.postMessage(JSON.stringify(message));
+  } catch (error) {
+    // el puente no esta disponible: la reproduccion no debe verse afectada
   }
+}
 
-  function sanitize(url, text) {
-    try {
-      var filtered = bridge.filterPlayerResponse(url, text);
-      return typeof filtered === 'string' && filtered.length > 0 ? filtered : text;
-    } catch (error) {
-      return text;
-    }
-  }
+function text(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
 
-  // --- Estado de reproduccion y metadatos ---
-  // Los eventos de <audio>/<video> no burbujean: se escuchan en fase de captura para
-  // enterarse de cualquier elemento, incluidos los que la pagina crea despues.
-  var lastMedia = null;
+// --- Poda de youtubei/v1/player ---
+// Se hace aqui, de forma sincrona: V8 parsea y serializa el cuerpo en milisegundos, mientras que
+// mandarlo a Kotlin costaba dos copias de cientos de KB por el puente en cada cancion.
+var pruner = createPruner(config.adKeys, config.protectedKeys);
+var PLAYER_HOSTS = /(^|\.)(youtube\.com|youtube-nocookie\.com|googleapis\.com|googlevideo\.com)$/;
+var paths = { fetch: 0, xhr: 0 };
 
-  function activeMedia() {
-    var elements = document.querySelectorAll('video, audio');
-    for (var i = 0; i < elements.length; i++) {
-      if (!elements[i].paused) return elements[i];
-    }
-    return lastMedia || elements[0] || null;
-  }
-
-  function notifyState(playing) {
-    try {
-      bridge.onPlaybackStateChanged(playing);
-    } catch (error) {
-      // el puente no esta disponible: la reproduccion no debe verse afectada
-    }
-  }
-
-  function textOf(selectors) {
-    for (var i = 0; i < selectors.length; i++) {
-      var node = document.querySelector(selectors[i]);
-      var text = node && (node.textContent || '').trim();
-      if (text) return text;
-    }
-    return '';
-  }
-
-  function notifyMetadata(playing) {
-    if (typeof bridge.onMetadataChanged !== 'function') return;
-    try {
-      var media = activeMedia();
-      // navigator.mediaSession se rellena de forma asincrona y puede seguir vacio justo al
-      // arrancar: la barra del reproductor es la fuente fiable, y document.title el ultimo
-      // recurso (mientras carga vale solo "YouTube Music").
-      var meta = (navigator.mediaSession && navigator.mediaSession.metadata) || {};
-      var title = meta.title ||
-        textOf(['.title.ytmusic-player-bar', 'ytmusic-player-bar .title']) ||
-        document.title ||
-        '';
-      // La linea secundaria es "Artista • Album • Año": interesa el primer tramo.
-      var artist = meta.artist ||
-        textOf(['.byline.ytmusic-player-bar', 'ytmusic-player-bar .byline']).split('•')[0].trim();
-
-      bridge.onMetadataChanged(
-        title,
-        artist,
-        media ? media.duration : 0,
-        media ? media.currentTime : 0,
-        playing
-      );
-    } catch (error) {
-      // metadatos incompletos: la reproduccion no debe verse afectada
-    }
-  }
-
-  function onMediaEvent(playing) {
-    return function (event) {
-      if (event && event.target) lastMedia = event.target;
-      notifyState(playing);
-      notifyMetadata(playing);
-      if (playing) {
-        // La pagina termina de rellenar titulo e interprete un instante despues del play.
-        setTimeout(function () { notifyMetadata(true); }, 1500);
-        setTimeout(function () { notifyMetadata(true); }, 4000);
-      }
-    };
-  }
-
-  document.addEventListener('play', onMediaEvent(true), true);
-  document.addEventListener('playing', onMediaEvent(true), true);
-  document.addEventListener('pause', onMediaEvent(false), true);
-  document.addEventListener('ended', onMediaEvent(false), true);
-  document.addEventListener('loadedmetadata', function (event) {
-    if (event && event.target) lastMedia = event.target;
-    notifyMetadata(!event.target.paused);
-  }, true);
-
-  // Refresco periodico para que la barra de progreso del bloqueo avance.
-  setInterval(function () {
-    var media = activeMedia();
-    if (media && !media.paused) notifyMetadata(true);
-  }, 5000);
-
-  // --- Controles invocados desde la MediaSession nativa ---
-  // Play/pausa actuan sobre el elemento; saltar de pista usa los botones de la pagina,
-  // que es lo unico que mantiene sincronizada su cola de reproduccion.
-  function clickFirst(selectors) {
-    for (var i = 0; i < selectors.length; i++) {
-      var button = document.querySelector(selectors[i]);
-      if (button) {
-        button.click();
-        return true;
-      }
-    }
+function isPlayerUrl(url) {
+  try {
+    var parsed = new URL(url, location.href);
+    var path = parsed.pathname;
+    return (path === '/youtubei/v1/player' || path === '/youtubei/v1/player/') &&
+      PLAYER_HOSTS.test(parsed.hostname);
+  } catch (error) {
     return false;
   }
+}
 
-  window.__adBlockPlayerControl = {
-    play: function () {
-      var media = activeMedia();
-      if (media) media.play();
-    },
-    pause: function () {
-      var media = activeMedia();
-      if (media) media.pause();
-    },
-    next: function () {
-      clickFirst(['.next-button.ytmusic-player-bar', 'tp-yt-paper-icon-button.next-button', '.ytp-next-button']);
-    },
-    previous: function () {
-      clickFirst(['.previous-button.ytmusic-player-bar', 'tp-yt-paper-icon-button.previous-button', '.ytp-prev-button']);
-    },
-    seek: function (seconds) {
-      var media = activeMedia();
-      if (media && isFinite(seconds)) media.currentTime = seconds;
-    }
-  };
+function requestUrl(input) {
+  if (typeof input === 'string') return input;
+  if (input && typeof input.url === 'string') return input.url; // Request
+  if (input && typeof input.href === 'string') return input.href; // URL
+  return '';
+}
 
-  // --- fetch (ruta que usa el cliente web actual) ---
-  var originalFetch = window.fetch;
-  if (typeof originalFetch === 'function') {
-    window.fetch = function (input, init) {
-      var url = typeof input === 'string' ? input : (input && input.url) || '';
-      var pending = originalFetch.apply(this, arguments);
-      if (!isPlayerUrl(url)) return pending;
+function reportPruned(removed) {
+  post({ t: 'pruned', removed: removed });
+}
 
-      return pending.then(function (response) {
-        if (!response || !response.ok) return response;
-        return response
-          .clone()
-          .text()
-          .then(function (text) {
-            var filtered = sanitize(url, text);
-            if (filtered === text) return response;
-            return new Response(filtered, {
-              status: response.status,
-              statusText: response.statusText,
-              // Solo se conserva el content-type: el content-length original ya no encaja.
-              headers: { 'content-type': response.headers.get('content-type') || 'application/json' }
-            });
-          })
-          .catch(function () {
-            return response;
-          });
+// fetch: es la via del cliente web actual. YTM guarda su referencia a `fetch` al cargar, por eso
+// este envoltorio solo funciona si se instala antes que sus scripts (document-start).
+var originalFetch = window.fetch;
+if (typeof originalFetch === 'function') {
+  window.fetch = function (input, init) {
+    var url = requestUrl(input);
+    var pending = originalFetch.apply(this, arguments);
+    if (!isPlayerUrl(url)) return pending;
+
+    return pending.then(function (response) {
+      if (!response || !response.ok) return response;
+      return response.clone().text().then(function (body) {
+        var result = pruner.text(body);
+        paths.fetch++;
+        reportPruned(result.removed);
+        if (result.removed === 0) return response;
+        var headers = new Headers(response.headers);
+        // El cuerpo cambio de tamaño y ya no va comprimido.
+        headers.delete('content-length');
+        headers.delete('content-encoding');
+        var pruned = new Response(result.text, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: headers
+        });
+        try {
+          Object.defineProperty(pruned, 'url', { value: response.url });
+        } catch (error) {
+          // sin url propia: la pagina no la usa para el player
+        }
+        return pruned;
+      }, function () {
+        return response;
       });
-    };
-  }
+    });
+  };
+}
 
-  // --- XMLHttpRequest (ruta heredada) ---
-  var originalOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (method, url) {
+// XMLHttpRequest: ruta heredada. La respuesta se poda al leerla (getter perezoso por instancia),
+// asi da igual en que orden registro la pagina sus manejadores de eventos.
+var xhrProto = XMLHttpRequest.prototype;
+var responseTextGetter = Object.getOwnPropertyDescriptor(xhrProto, 'responseText').get;
+var responseGetter = Object.getOwnPropertyDescriptor(xhrProto, 'response').get;
+var originalOpen = xhrProto.open;
+
+// Estado de la peticion en curso de cada instancia: una misma XHR puede reutilizarse con otra URL.
+var xhrStates = new WeakMap();
+var patchedXhrs = new WeakSet();
+
+function prunedXhrText(xhr, state) {
+  if (xhr.readyState !== 4 || xhr.status < 200 || xhr.status >= 300) return null;
+  if (!state.result) {
+    state.result = pruner.text(responseTextGetter.call(xhr));
+    paths.xhr++;
+    reportPruned(state.result.removed);
+  }
+  return state.result.text;
+}
+
+function patchXhr(xhr) {
+  Object.defineProperty(xhr, 'responseText', {
+    configurable: true,
+    get: function () {
+      var state = xhrStates.get(xhr);
+      var pruned = state && state.player ? prunedXhrText(xhr, state) : null;
+      return pruned !== null ? pruned : responseTextGetter.call(xhr);
+    }
+  });
+  Object.defineProperty(xhr, 'response', {
+    configurable: true,
+    get: function () {
+      var state = xhrStates.get(xhr);
+      var type = xhr.responseType;
+      if (state && state.player && (type === '' || type === 'text')) {
+        var pruned = prunedXhrText(xhr, state);
+        if (pruned !== null) return pruned;
+      }
+      var value = responseGetter.call(xhr);
+      if (state && state.player && type === 'json' && !state.objectPruned && xhr.readyState === 4) {
+        state.objectPruned = true;
+        paths.xhr++;
+        reportPruned(pruner.object(value));
+      }
+      return value;
+    }
+  });
+}
+
+xhrProto.open = function (method, url) {
+  var state = { player: isPlayerUrl(String(url)), result: null, objectPruned: false };
+  xhrStates.set(this, state);
+  if (state.player && !patchedXhrs.has(this)) {
     try {
-      this.__adBlockUrl = url;
+      patchXhr(this);
+      patchedXhrs.add(this);
     } catch (error) {
       // instancia sellada: se ignora y la peticion sigue sin filtrar
     }
-    return originalOpen.apply(this, arguments);
-  };
+  }
+  return originalOpen.apply(this, arguments);
+};
 
-  var originalSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function () {
-    var request = this;
-    if (isPlayerUrl(request.__adBlockUrl)) {
-      request.addEventListener('readystatechange', function () {
-        if (request.readyState !== 4 || request.status < 200 || request.status >= 300) return;
-        try {
-          var raw = request.responseText;
-          var filtered = sanitize(request.__adBlockUrl, raw);
-          if (filtered === raw) return;
-          Object.defineProperty(request, 'responseText', { get: function () { return filtered; } });
-          Object.defineProperty(request, 'response', { get: function () { return filtered; } });
-        } catch (error) {
-          // responseText no redefinible: se deja la respuesta original
+// --- Sesion multimedia ---
+// WebView no implementa navigator.mediaSession. Con este sustituto YouTube Music publica titulo,
+// artista, album y caratula, y registra sus propios manejadores de play/pausa/siguiente: los
+// mandos de la notificacion los usan en lugar de pulsar botones del DOM.
+var handlers = Object.create(null);
+var currentMetadata = null;
+var playbackState = 'none';
+var lastTrackKey = '';
+var lastMedia = null;
+
+function readArtwork(list) {
+  var result = [];
+  if (!list || typeof list.length !== 'number') return result;
+  for (var i = 0; i < list.length && result.length < 10; i++) {
+    var item = list[i];
+    if (item && typeof item.src === 'string') {
+      result.push({ src: item.src, sizes: typeof item.sizes === 'string' ? item.sizes : '' });
+    }
+  }
+  return result;
+}
+
+function MediaMetadataShim(init) {
+  init = init || {};
+  this.title = text(init.title);
+  this.artist = text(init.artist);
+  this.album = text(init.album);
+  this.artwork = readArtwork(init.artwork);
+}
+
+function textOf(selectors) {
+  for (var i = 0; i < selectors.length; i++) {
+    var node = document.querySelector(selectors[i]);
+    var value = node && (node.textContent || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function publishTrack() {
+  var meta = currentMetadata;
+  var message = {
+    t: 'meta',
+    title: meta ? text(meta.title) : '',
+    artist: meta ? text(meta.artist) : '',
+    album: meta ? text(meta.album) : '',
+    artwork: meta ? readArtwork(meta.artwork) : []
+  };
+  if (!message.title) {
+    // Respaldo si la pagina no publico metadatos: la barra del reproductor.
+    message.title = textOf(['ytmusic-player-bar .title']);
+    // La linea secundaria es "Artista • Album • Año": interesa el primer tramo.
+    message.artist = textOf(['ytmusic-player-bar .byline']).split('•')[0].trim();
+  }
+  if (!message.title) return;
+  var key = JSON.stringify(message);
+  if (key === lastTrackKey) return;
+  lastTrackKey = key;
+  post(message);
+}
+
+var session = {
+  setActionHandler: function (action, handler) {
+    if (typeof handler === 'function') handlers[action] = handler;
+    else delete handlers[action];
+  },
+  setPositionState: function () {},
+  setMicrophoneActive: function () {},
+  setCameraActive: function () {}
+};
+Object.defineProperty(session, 'metadata', {
+  enumerable: true,
+  get: function () { return currentMetadata; },
+  set: function (value) {
+    currentMetadata = value || null;
+    publishTrack();
+  }
+});
+Object.defineProperty(session, 'playbackState', {
+  enumerable: true,
+  get: function () { return playbackState; },
+  set: function (value) { playbackState = String(value); }
+});
+
+try {
+  if (!('mediaSession' in navigator)) {
+    Object.defineProperty(Navigator.prototype, 'mediaSession', {
+      configurable: true,
+      enumerable: true,
+      get: function () { return session; }
+    });
+    if (typeof window.MediaMetadata !== 'function') window.MediaMetadata = MediaMetadataShim;
+  } else {
+    // Un WebView futuro con la API real: se escuchan sus setters sin sustituirla.
+    var proto = Object.getPrototypeOf(navigator.mediaSession);
+    var metadataDescriptor = Object.getOwnPropertyDescriptor(proto, 'metadata');
+    if (metadataDescriptor && metadataDescriptor.set) {
+      Object.defineProperty(proto, 'metadata', {
+        configurable: true,
+        enumerable: true,
+        get: metadataDescriptor.get,
+        set: function (value) {
+          metadataDescriptor.set.call(this, value);
+          currentMetadata = value || null;
+          publishTrack();
         }
       });
     }
-    return originalSend.apply(this, arguments);
-  };
+    var nativeSetActionHandler = proto.setActionHandler;
+    proto.setActionHandler = function (action, handler) {
+      session.setActionHandler(action, handler);
+      return nativeSetActionHandler.apply(this, arguments);
+    };
+  }
+} catch (error) {
+  // sin sesion multimedia: queda el respaldo del DOM
+}
 
-  // --- Cierre de la pagina de la cancion ---
-  // Al abrirla, YouTube Music pone `visibility: visible` en linea sobre `ytmusic-player-page` y
-  // cuenta con el final de la animacion de cierre para devolverla a `hidden`. En WebView ese
-  // `animationend` no llega (el de apertura si), asi que su `#main-panel` -fijo y a pantalla
-  // completa- se queda sobre el inicio: medio pintado y tragandose todos los toques. Aqui se
-  // hace ese mismo cambio en cuanto la pagina esta cerrada y sin animacion viva.
-  //
-  // Va al final a proposito: si algo aqui fallara, el filtrado de anuncios ya esta instalado.
-  var PLAYER_PAGE = 'ytmusic-player-page';
-  var CLOSE_POLL_MS = 100;
-  var CLOSE_MAX_TRIES = 20; // 2 s de tope por si la animacion nunca termina
-  var ATTACH_POLL_MS = 500;
-  var ATTACH_MAX_TRIES = 60; // 30 s: si no aparece, no se esta en YouTube Music
+// --- Estado de reproduccion ---
+// Solo eventos (nada de sondeos): el sistema extrapola la posicion entre un aviso y otro.
+function activeMedia() {
+  var elements = document.querySelectorAll('video, audio');
+  for (var i = 0; i < elements.length; i++) {
+    if (!elements[i].paused) return elements[i];
+  }
+  return lastMedia || elements[0] || null;
+}
 
-  function releaseClosedPlayerPage(page, tries) {
-    if (page.hasAttribute('player-page-open')) return;
-    if (page.style.visibility !== 'visible') return;
+function publishState(media, buffering) {
+  post({
+    t: 'state',
+    playing: !media.paused && !media.ended,
+    buffering: buffering,
+    position: media.currentTime,
+    duration: media.duration
+  });
+}
 
-    var animating = (page.getAnimations ? page.getAnimations({ subtree: true }) : [])
-      .some(function (animation) { return animation.playState === 'running'; });
-    if (animating && tries < CLOSE_MAX_TRIES) {
-      setTimeout(function () { releaseClosedPlayerPage(page, tries + 1); }, CLOSE_POLL_MS);
-      return;
+var trackRetry = 0;
+['play', 'playing', 'pause', 'ended', 'seeked', 'ratechange', 'durationchange', 'loadedmetadata', 'waiting']
+  .forEach(function (type) {
+    // Los eventos multimedia no burbujean: fase de captura para oir a cualquier elemento.
+    document.addEventListener(type, function (event) {
+      var media = event.target;
+      if (!(media instanceof HTMLMediaElement)) return;
+      lastMedia = media;
+      publishState(media, type === 'waiting');
+      if (type === 'playing' || type === 'loadedmetadata') {
+        publishTrack();
+        // Sin metadatos de la pagina, el titulo del DOM llega un instante despues del play.
+        if (!currentMetadata) {
+          clearTimeout(trackRetry);
+          trackRetry = setTimeout(publishTrack, 1500);
+        }
+      }
+    }, true);
+  });
+
+// --- Mandos de la notificacion y la pantalla de bloqueo ---
+function invoke(action, details) {
+  var handler = handlers[action];
+  if (typeof handler !== 'function') return false;
+  try {
+    var event = { action: action };
+    if (details) {
+      for (var key in details) event[key] = details[key];
     }
-
-    // `hidden` es el valor en linea que la propia web le deja mientras esta cerrada: borrarlo
-    // no basta, porque la hoja de estilos la deja visible.
-    page.style.visibility = 'hidden';
+    handler(event);
+    return true;
+  } catch (error) {
+    return false;
   }
+}
 
-  function watchPlayerPage(page) {
-    // Reabrir la cancion vuelve a poner el atributo, de ahi que se compruebe en cada cambio.
-    // El aviso llega antes de que el motor recalcule los estilos: se espera un fotograma para
-    // que, si hay animacion de cierre, conste antes de mirarla.
-    new MutationObserver(function () {
-      requestAnimationFrame(function () { releaseClosedPlayerPage(page, 0); });
-    }).observe(page, { attributes: true, attributeFilter: ['player-page-open', 'style'] });
-    releaseClosedPlayerPage(page, 0);
-  }
-
-  // El hook se inyecta con el documento todavia vacio: la pagina la crea Polymer mas tarde.
-  function attachPlayerPageWatch(tries) {
-    var page = document.querySelector(PLAYER_PAGE);
-    if (page) {
-      watchPlayerPage(page);
-    } else if (tries < ATTACH_MAX_TRIES) {
-      setTimeout(function () { attachPlayerPageWatch(tries + 1); }, ATTACH_POLL_MS);
+function clickFirst(selectors) {
+  for (var i = 0; i < selectors.length; i++) {
+    var button = document.querySelector(selectors[i]);
+    if (button) {
+      button.click();
+      return true;
     }
   }
+  return false;
+}
 
-  attachPlayerPageWatch(0);
-})();
+api.play = function () {
+  if (invoke('play')) return;
+  var media = activeMedia();
+  if (media) media.play();
+};
+api.pause = function () {
+  if (invoke('pause')) return;
+  var media = activeMedia();
+  if (media) media.pause();
+};
+api.next = function () {
+  if (!invoke('nexttrack')) clickFirst(['ytmusic-player-bar .next-button', '.ytp-next-button']);
+};
+api.previous = function () {
+  if (!invoke('previoustrack')) clickFirst(['ytmusic-player-bar .previous-button', '.ytp-prev-button']);
+};
+api.seek = function (seconds) {
+  if (!isFinite(seconds)) return;
+  if (invoke('seekto', { seekTime: seconds })) return;
+  var media = activeMedia();
+  if (media) media.currentTime = seconds;
+};
+api.isPlaying = function () {
+  var media = activeMedia();
+  return !!media && !media.paused;
+};
+if (config.debug) {
+  // Solo en la variante depurable: por que via llego cada playerResponse.
+  api.debugPaths = function () { return JSON.stringify(paths); };
+}

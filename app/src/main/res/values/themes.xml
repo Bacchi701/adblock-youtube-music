@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BloqueadorAnuncios" parent="android:Theme.Material.NoActionBar" />
+    <!-- Fondo de YouTube Music desde el primer fotograma: sin destello al abrir la app. -->
+    <style name="Theme.BloqueadorAnuncios" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ytm_background</item>
+        <item name="android:colorBackground">@color/ytm_background</item>
+    </style>
 </resources>

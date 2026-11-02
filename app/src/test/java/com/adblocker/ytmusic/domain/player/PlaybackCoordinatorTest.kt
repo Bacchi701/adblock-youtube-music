@@ -23,6 +23,18 @@ class PlaybackCoordinatorTest {
     }
 
     @Test
+    fun `cada aviso de la pagina cambia solo su parte`() {
+        coordinator.updateMetadata(PlaybackMetadata(title = "Cancion", artist = "Artista"))
+
+        coordinator.updateMetadata { it.copy(isPlaying = true, positionMs = 5_000) }
+
+        assertEquals(
+            PlaybackMetadata(title = "Cancion", artist = "Artista", isPlaying = true, positionMs = 5_000),
+            coordinator.metadata.value,
+        )
+    }
+
+    @Test
     fun `el boton unico alterna segun lo que suene`() {
         assertEquals(PlayerCommand.Play, coordinator.toggleCommand())
 
